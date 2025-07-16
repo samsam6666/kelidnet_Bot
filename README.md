@@ -34,12 +34,15 @@ AlamorVPN Bot یک ربات تلگرامی قدرتمند و ماژولار اس
 git clone https://github.com/AlamorNetwork/AlamorVPN_Bot.git
 cd AlamorVPN_Bot
 ```
-
+سپس با این دستور محیط مجازی رو نصب کنید در لینوکس 
+```bash
+apt install python3.10-venv
+```
 ### ۲. ساخت و فعال‌سازی محیط مجازی (Virtual Environment)
 استفاده از محیط مجازی به شدت توصیه می‌شود تا کتابخانه‌های این پروژه با سایر پروژه‌های شما تداخل نداشته باشند.
 ```bash
 # ساخت محیط مجازی
-python -m venv .venv
+python3 -m venv .venv
 
 # فعال‌سازی در ویندوز
 .venv\Scripts\activate
@@ -71,13 +74,13 @@ pip install -r requirements.txt
     - **`ADMIN_IDS_ALAMOR`**: آیدی عددی حساب تلگرام خودتان را به عنوان ادمین وارد کنید. (برای یافتن آیدی خود به ربات @userinfobot پیام دهید). مثال: `[123456789]`
     - **`ENCRYPTION_KEY_ALAMOR`**: این یک کلید برای رمزنگاری اطلاعات حساس است. برای ساخت یک کلید جدید، دستور زیر را در ترمینال اجرا کرده و خروجی را در فایل `.env` کپی کنید:
         ```bash
-        python code-generate.py
+        python3 code-generate.py
         ```
 
 ### ۵. اجرای ربات
 پس از انجام تمام مراحل بالا، با دستور زیر ربات را اجرا کنید:
 ```bash
-python main.py
+python3 main.py
 ```
 ربات شما اکنون آنلاین و آماده استفاده است!
 
