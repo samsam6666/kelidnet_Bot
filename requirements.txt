@@ -13,5 +13,3 @@ python-dotenv==1.0.1
 # For generating QR codes
 qrcode[pil]==7.4.2
 Pillow==10.4.0
-
-json==2.0.9
