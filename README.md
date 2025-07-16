@@ -31,7 +31,7 @@ AlamorVPN Bot یک ربات تلگرامی قدرتمند و ماژولار اس
 ### ۱. آماده‌سازی اولیه
 ابتدا پروژه را از گیت‌هاب دانلود کرده و وارد پوشه آن شوید:
 ```bash
-git clone [https://github.com/AlamorNetwork/AlamorVPN_Bot.git](https://github.com/AlamorNetwork/AlamorVPN_Bot.git)
+git clone https://github.com/AlamorNetwork/AlamorVPN_Bot.git
 cd AlamorVPN_Bot
 ```
 
