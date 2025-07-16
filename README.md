@@ -113,7 +113,7 @@ User=root
 WorkingDirectory=/root/AlamorVPN_Bot
 
 # دستور کامل برای اجرای ربات با استفاده از پایتونِ محیط مجازی
-ExecStart=/root/AlamorVPN_Bot/.venv/bin/python3 /path/to/your/AlamorVPN_Bot/main.py
+ExecStart=/root/AlamorVPN_Bot/.venv/bin/python3 /root/AlamorVPN_Bot/main.py
 
 # راه‌اندازی مجدد خودکار در صورت بروز خطا
 Restart=on-failure
