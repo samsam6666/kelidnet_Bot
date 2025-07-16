@@ -38,6 +38,10 @@ cd AlamorVPN_Bot
 ```bash
 apt install python3.10-venv
 ```
+با این دستور pip رو نصب کنید
+```bash
+apt install python3-pip
+```
 ### ۲. ساخت و فعال‌سازی محیط مجازی (Virtual Environment)
 استفاده از محیط مجازی به شدت توصیه می‌شود تا کتابخانه‌های این پروژه با سایر پروژه‌های شما تداخل نداشته باشند.
 ```bash
