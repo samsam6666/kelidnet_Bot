@@ -472,11 +472,11 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
         client_details, sub_link, _ = config_gen.create_client_and_configs(user_id, test_server_id, test_volume_gb, test_duration_days)
 
         if sub_link:
+            print("Free test subscription created successfully.")
+            print(f"Subscription Link: {sub_link}")
             _db_manager.record_free_test_usage(user_db_info['id'])
             _bot.delete_message(user_id, message.message_id)
             _bot.send_message(user_id, messages.GET_FREE_TEST_SUCCESS)
-            # --- بخش اصلاح شده ---
-            # فراخوانی تابع مشترک جدید
             send_subscription_info(user_id, sub_link)
         else:
             _bot.edit_message_text(messages.OPERATION_FAILED, user_id, message.message_id)
@@ -496,7 +496,7 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
         _bot.send_photo(user_id, bio, caption=messages.QR_CODE_CAPTION)
         
         # Send Subscription Link
-        _bot.send_message(user_id, messages.CONFIG_DELIVERY_SUB_LINK.format(sub_link=helpers.escape_markdown_v1(sub_link)), parse_mode='Markdown')
+        _bot.send_message(user_id, messages.CONFIG_DELIVERY_SUB_LINK.format(sub_link=sub_link), parse_mode='Markdown')
 
     def show_my_services_list(user_id, message):
         user_db_info = _db_manager.get_user_by_telegram_id(user_id)
