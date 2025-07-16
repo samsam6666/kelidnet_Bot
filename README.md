@@ -95,6 +95,35 @@ nano .env
 python3 main.py
 ```
 ربات شما اکنون آنلاین و آماده استفاده است!
+نکته : برا یران شدن ابدی ربات در سرور ( اگر ریست شد سرور قطع نشه بات ) از دستور زیر استفاده کنید 
+```bash
+sudo nano /etc/systemd/system/alamorbot.service
+```
+و این کد هارو داخل این فایل قرار بدین :
+```bash
+[Unit]
+Description=Alamor VPN Telegram Bot
+After=network.target
+
+[Service]
+# نام کاربری که ربات با آن اجرا می‌شود (اگر کاربر خاصی نساخته‌اید، می‌توانید root قرار دهید)
+User=root
+
+# مسیر کامل پوشه پروژه شما
+WorkingDirectory=/root/AlamorVPN_Bot
+
+# دستور کامل برای اجرای ربات با استفاده از پایتونِ محیط مجازی
+ExecStart=/root/AlamorVPN_Bot/.venv/bin/python3 /path/to/your/AlamorVPN_Bot/main.py
+
+# راه‌اندازی مجدد خودکار در صورت بروز خطا
+Restart=on-failure
+RestartSec=10s
+
+[Install]
+WantedBy=multi-user.target
+
+```
+نکته : اگر داخل پوشه روت نریختین ربات رو به جای ادرس : /root/AlamorVPN_Bot/ ادرس دایکتوری خودتون رو بدین و اگر از یوزر دیگه ای غیر از روت ایتفاده میکنین User=root رو به یوزر خودتون تغییر بدین.
 
 ---
 
