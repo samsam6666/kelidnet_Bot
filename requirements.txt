@@ -1,0 +1,7 @@
+PyTelegramBotAPI==4.17.0
+requests==2.32.3
+cryptography==42.0.8
+python-dotenv==1.0.1
+qrcode[pil]==7.4.2
+Pillow==10.4.0
+json==2.0.9

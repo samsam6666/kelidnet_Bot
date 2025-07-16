@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual Environment
+.venv/
+venv/
+env/
+
+# IDE and Editor specific files
+.vscode/
+.idea/
+*.swp
+
+# Sensitive Files
+.env
+*.db
+*.db-journal
+bot.log
+
+# OS-specific files
+.DS_Store
+Thumbs.db
