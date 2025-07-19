@@ -13,7 +13,7 @@ project_path = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, project_path)
 
 # وارد کردن ماژول‌های پروژه
-from config import ZARINPAL_SANDBOX, BOT_TOKEN
+from config import  BOT_TOKEN , BOT_USERNAME_ALAMOR
 from database.db_manager import DatabaseManager
 from utils.bot_helpers import send_subscription_info
 from utils.config_generator import ConfigGenerator
@@ -30,11 +30,8 @@ bot = telebot.TeleBot(BOT_TOKEN)
 config_gen = ConfigGenerator(XuiAPIClient, db_manager)
 
 # بر اساس وضعیت سندباکس، آدرس صحیح را انتخاب کن
-if ZARINPAL_SANDBOX:
-    ZARINPAL_VERIFY_URL = "https://sandbox.zarinpal.com/pg/v4/payment/verify.json"
-else:
-    ZARINPAL_VERIFY_URL = "https://api.zarinpal.com/pg/v4/payment/verify.json"
-BOT_USERNAME = "YourBotUsername" # یوزرنیم ربات خود را اینجا وارد کنید
+ZARINPAL_VERIFY_URL = "https://api.zarinpal.com/pg/v4/payment/verify.json"
+BOT_USERNAME = BOT_USERNAME_ALAMOR or "YourBotUsername" # یوزرنیم ربات خود را اینجا وارد کنید
 
 @app.route('/zarinpal/verify', methods=['GET'])
 def handle_zarinpal_callback():

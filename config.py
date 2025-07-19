@@ -87,11 +87,13 @@ REQUIRED_CHANNEL_ID = int(REQUIRED_CHANNEL_ID_STR) if REQUIRED_CHANNEL_ID_STR an
 REQUIRED_CHANNEL_LINK = os.getenv("REQUIRED_CHANNEL_LINK_ALAMOR", "https://t.me/YourChannelLink")
 MAX_API_RETRIES = 3
 # در فایل config.py
+WEBHOOK_DOMAIN = os.getenv("WEBHOOK_DOMAIN")
 ZARINPAL_MERCHANT_ID = os.getenv("ZARINPAL_MERCHANT_ID")
-WEBHOOK_DOMAIN = os.getenv("WEBHOOK_DOMAIN", "")
 
 
 
 # در انتهای فایل config.py
 ZARINPAL_SANDBOX = os.getenv("ZARINPAL_SANDBOX", "False").lower() in ['true', '1', 't']
 ZARINPAL_MERCHANT_ID = os.getenv("ZARINPAL_MERCHANT_ID")
+
+

@@ -5,8 +5,6 @@ import json
 import qrcode
 from io import BytesIO
 import requests
-from config import WEBHOOK_DOMAIN
-from config import ZARINPAL_MERCHANT_ID, WEBHOOK_DOMAIN
 from config import SUPPORT_CHANNEL_LINK, ADMIN_IDS
 from database.db_manager import DatabaseManager
 from api_client.xui_api_client import XuiAPIClient
@@ -29,12 +27,11 @@ _config_generator: ConfigGenerator = None
 _user_menu_message_ids = {} # {user_id: message_id}
 _user_states = {} # {user_id: {'state': '...', 'data': {...}}}
 
-if ZARINPAL_SANDBOX:
-    ZARINPAL_API_URL = "https://sandbox.zarinpal.com/pg/v4/payment/request.json"
-    ZARINPAL_STARTPAY_URL = "https://sandbox.zarinpal.com/pg/StartPay/"
-else:
-    ZARINPAL_API_URL = "https://api.zarinpal.com/pg/v4/payment/request.json"
-    ZARINPAL_STARTPAY_URL = "https://www.zarinpal.com/pg/StartPay/"
+
+
+ZARINPAL_API_URL = "https://api.zarinpal.com/pg/v4/payment/request.json"
+ZARINPAL_STARTPAY_URL = "https://www.zarinpal.com/pg/StartPay/"
+
 def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
     global _bot, _db_manager, _xui_api, _config_generator
     _bot = bot_instance
