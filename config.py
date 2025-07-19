@@ -95,5 +95,7 @@ ZARINPAL_MERCHANT_ID = os.getenv("ZARINPAL_MERCHANT_ID")
 # در انتهای فایل config.py
 ZARINPAL_SANDBOX = os.getenv("ZARINPAL_SANDBOX", "False").lower() in ['true', '1', 't']
 ZARINPAL_MERCHANT_ID = os.getenv("ZARINPAL_MERCHANT_ID")
+BOT_USERNAME_ALAMOR = os.getenv("BOT_USERNAME_ALAMOR", "YourBotUsername")
+
 
 
