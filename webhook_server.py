@@ -33,6 +33,11 @@ config_gen = ConfigGenerator(XuiAPIClient, db_manager)
 ZARINPAL_VERIFY_URL = "https://api.zarinpal.com/pg/v4/payment/verify.json"
 BOT_USERNAME = BOT_USERNAME_ALAMOR or "YourBotUsername" # یوزرنیم ربات خود را اینجا وارد کنید
 
+@app.route('/', methods=['GET'])
+def index():
+    """یک پیام ساده برای روت اصلی نمایش می‌دهد تا از خطای 404 جلوگیری شود."""
+    return "AlamorVPN Bot Webhook Server is running."
+
 @app.route('/zarinpal/verify', methods=['GET'])
 def handle_zarinpal_callback():
     authority = request.args.get('Authority')
@@ -56,7 +61,8 @@ def handle_zarinpal_callback():
         return render_template('payment_status.html', status='success', ref_id=payment.get('ref_id'), bot_username=BOT_USERNAME)
 
     if status == 'OK':
-        gateway = db_manager.get_payment_gateway_by_id(json.loads(payment['order_details_json'])['gateway_details']['id'])
+        order_details = json.loads(payment['order_details_json'])
+        gateway = db_manager.get_payment_gateway_by_id(order_details['gateway_details']['id'])
         
         payload = {"merchant_id": gateway['merchant_id'], "amount": int(payment['amount']) * 10, "authority": authority}
         
@@ -68,8 +74,6 @@ def handle_zarinpal_callback():
             if result.get("data") and result.get("data", {}).get("code") in [100, 101]:
                 ref_id = result.get("data", {}).get("ref_id", "N/A")
                 logger.info(f"Payment {payment['id']} verified successfully. Ref ID: {ref_id}")
-                
-                order_details = json.loads(payment['order_details_json'])
                 
                 if order_details['plan_type'] == 'fixed_monthly':
                     plan = order_details['plan_details']
@@ -90,7 +94,7 @@ def handle_zarinpal_callback():
                 return render_template('payment_status.html', status='success', ref_id=ref_id, bot_username=BOT_USERNAME)
             else:
                 error_message = result.get("errors", {}).get("message", "خطای نامشخص")
-                bot.send_message(user_telegram_id, f"❌ پرداخت شما توسط درگاه تایید نشد. لطفاً با پشتیبانی تماس بگیرید. (خطا: {error_message})")
+                bot.send_message(user_telegram_id, f"❌ پرداخت شما توسط درگاه تایید نشد. (خطا: {error_message})")
                 return render_template('payment_status.html', status='error', message=error_message, bot_username=BOT_USERNAME)
 
         except requests.exceptions.RequestException as e:
