@@ -13,7 +13,7 @@ project_path = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, project_path)
 
 # وارد کردن ماژول‌های پروژه
-from config import  BOT_TOKEN , BOT_USERNAME_ALAMOR
+from config import BOT_TOKEN, BOT_USERNAME_ALAMOR
 from database.db_manager import DatabaseManager
 from utils.bot_helpers import send_subscription_info
 from utils.config_generator import ConfigGenerator
@@ -29,9 +29,9 @@ db_manager = DatabaseManager()
 bot = telebot.TeleBot(BOT_TOKEN)
 config_gen = ConfigGenerator(XuiAPIClient, db_manager)
 
-# بر اساس وضعیت سندباکس، آدرس صحیح را انتخاب کن
+# آدرس API تایید پرداخت زرین‌پال (نسخه واقعی)
 ZARINPAL_VERIFY_URL = "https://api.zarinpal.com/pg/v4/payment/verify.json"
-BOT_USERNAME = BOT_USERNAME_ALAMOR or "YourBotUsername" # یوزرنیم ربات خود را اینجا وارد کنید
+BOT_USERNAME = BOT_USERNAME_ALAMOR or "YourBotUsername"
 
 @app.route('/', methods=['GET'])
 def index():
@@ -82,9 +82,20 @@ def handle_zarinpal_callback():
                     gb_plan = order_details['gb_plan_details']
                     total_gb, duration_days = order_details['requested_gb'], gb_plan.get('duration_days', 0)
                 
-                client_details, sub_link, _ = config_gen.create_client_and_configs(user_telegram_id, order_details['server_id'], total_gb, duration_days)
+                client_details, sub_link, single_configs = config_gen.create_client_and_configs(user_telegram_id, order_details['server_id'], total_gb, duration_days)
                 
                 if sub_link:
+                    expire_date = (datetime.datetime.now() + datetime.timedelta(days=duration_days)) if duration_days and duration_days > 0 else None
+                    plan_id = order_details.get('plan_details', {}).get('id') or order_details.get('gb_plan_details', {}).get('id')
+                    
+                    db_manager.add_purchase(
+                        user_id=payment['user_id'], server_id=order_details['server_id'], plan_id=plan_id,
+                        expire_date=expire_date.strftime("%Y-%m-%d %H:%M:%S") if expire_date else None,
+                        initial_volume_gb=total_gb, client_uuid=client_details['uuid'],
+                        client_email=client_details['email'], sub_id=client_details['subscription_id'],
+                        single_configs=single_configs
+                    )
+                    
                     db_manager.confirm_online_payment(payment['id'], str(ref_id))
                     bot.send_message(user_telegram_id, "✅ پرداخت شما با موفقیت تایید و سرویس شما فعال گردید.")
                     send_subscription_info(bot, user_telegram_id, sub_link)
