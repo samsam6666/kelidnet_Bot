@@ -103,6 +103,8 @@ EOL
     print_success ".env file created successfully."
 }
 
+# در فایل install.sh
+
 setup_ssl_and_nginx() {
     print_info "\n--- Configuring SSL for Payment Domain ---"
     read -p "Do you want to configure an online payment domain? (y/n): " setup_ssl
@@ -176,7 +178,6 @@ EOL
     echo "WEBHOOK_DOMAIN=\"$payment_domain\"" >> .env
     print_success "Payment domain saved to .env file."
 }
-
 setup_services() {
     print_info "Creating systemd services..."
     # Bot Service
