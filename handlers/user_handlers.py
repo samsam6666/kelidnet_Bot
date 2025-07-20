@@ -247,18 +247,16 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
 
         order_data = _user_states[user_id]['data']
         user_db_info = _db_manager.get_user_by_telegram_id(user_id)
-        if not user_db_info:
-            logger.error(f"Could not find user with telegram_id {user_id} in the database.")
-            _bot.edit_message_text(messages.OPERATION_FAILED, user_id, message.message_id)
-            return
-        # --- منطق تفکیک نوع درگاه ---
+        
         if gateway['type'] == 'zarinpal':
             _bot.edit_message_text("⏳ در حال ساخت لینک پرداخت امن... لطفاً صبر کنید.", user_id, message.message_id)
             
             amount_toman = int(order_data['total_price'])
             
-            # FIX: اطلاعات درگاه را به سفارش اضافه می‌کنیم تا در وب‌هوک قابل دسترس باشد
+            # --- بخش اصلاح شده ---
+            # اطلاعات درگاه را به سفارش اضافه می‌کنیم تا در وب‌هوک قابل دسترس باشد
             order_data['gateway_details'] = gateway
+            # --- پایان بخش اصلاح شده ---
             
             order_details_for_db = json.dumps(order_data)
             payment_id = _db_manager.add_payment(user_db_info['id'], amount_toman, message.message_id, order_details_for_db)
@@ -271,7 +269,7 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
             
             payload = {
                 "merchant_id": gateway['merchant_id'],
-                "amount": amount_toman * 10, # FIX: تبدیل تومان به ریال
+                "amount": amount_toman * 10, # تبدیل تومان به ریال
                 "callback_url": callback_url,
                 "description": f"خرید سرویس از ربات - سفارش شماره {payment_id}",
                 "metadata": {"user_id": str(user_id), "payment_id": str(payment_id)}
@@ -287,7 +285,6 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
                     payment_url = f"{ZARINPAL_STARTPAY_URL}{authority}"
                     _db_manager.set_payment_authority(payment_id, authority)
                     
-                    # FIX: ساخت صحیح کیبورد با دو دکمه مجزا
                     markup = types.InlineKeyboardMarkup()
                     btn_pay = types.InlineKeyboardButton("🚀 پرداخت آنلاین", url=payment_url)
                     btn_back = types.InlineKeyboardButton("❌ انصراف و بازگشت", callback_data="user_main_menu")
@@ -308,9 +305,11 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
                 logger.error(f"Error connecting to Zarinpal: {e}")
                 _bot.edit_message_text("❌ امکان اتصال به درگاه پرداخت در حال حاضر وجود ندارد.", user_id, message.message_id)
 
-        # --- منطق برای کارت به کارت ---
         elif gateway['type'] == 'card_to_card':
+            # این بخش برای اطمینان از سازگاری، اطلاعات درگاه را به هر دو صورت ذخیره می‌کند
+            order_data['gateway_details'] = gateway
             _user_states[user_id]['data']['gateway_details'] = gateway
+            
             _user_states[user_id]['state'] = 'waiting_for_payment_receipt'
             total_price = order_data['total_price']
             payment_text = messages.PAYMENT_GATEWAY_DETAILS.format(
@@ -321,7 +320,6 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
             )
             sent_msg = _bot.edit_message_text(payment_text, user_id, message.message_id, reply_markup=inline_keyboards.get_back_button("show_order_summary"))
             _user_states[user_id]['prompt_message_id'] = sent_msg.message_id
-
     def process_payment_receipt(message):
         user_id = message.from_user.id
         state_data = _user_states.get(user_id)
