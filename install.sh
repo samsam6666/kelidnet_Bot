@@ -217,7 +217,7 @@ update_bot() {
     if [ $? -ne 0 ]; then print_error "Failed to pull updates from GitHub. Aborting."; exit 1; fi
     $INSTALL_DIR/.venv/bin/python3 -m pip install -r requirements.txt
     sudo systemctl start $BOT_SERVICE_NAME $WEBHOOK_SERVICE_NAME 2>/dev/null
-    sudo systemctl restart $BOT_SERVICE_NAME $WEBHOOK_SERVICE_NAME
+    sudo 
     print_success "Bot updated and restarted successfully."
 }
 

@@ -1,4 +1,4 @@
-# webhook_server.py (نسخه نهایی با ثبت خرید)
+# webhook_server.py
 
 from flask import Flask, request, render_template
 import requests
@@ -13,7 +13,7 @@ project_path = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, project_path)
 
 # وارد کردن ماژول‌های پروژه
-from config import BOT_TOKEN, BOT_USERNAME_ALAMOR
+from config import BOT_TOKEN, BOT_USERNAME_ALAMOR # <-- اصلاح شد
 from database.db_manager import DatabaseManager
 from utils.bot_helpers import send_subscription_info
 from utils.config_generator import ConfigGenerator
@@ -29,8 +29,9 @@ db_manager = DatabaseManager()
 bot = telebot.TeleBot(BOT_TOKEN)
 config_gen = ConfigGenerator(XuiAPIClient, db_manager)
 
+# آدرس API واقعی زرین‌پال
 ZARINPAL_VERIFY_URL = "https://api.zarinpal.com/pg/v4/payment/verify.json"
-BOT_USERNAME = BOT_USERNAME_ALAMOR or "YourBotUsername"
+BOT_USERNAME = BOT_USERNAME_ALAMOR # <-- اصلاح شد
 
 @app.route('/', methods=['GET'])
 def index():
@@ -83,19 +84,16 @@ def handle_zarinpal_callback():
                 client_details, sub_link, single_configs = config_gen.create_client_and_configs(user_telegram_id, order_details['server_id'], total_gb, duration_days)
                 
                 if sub_link:
-                    # --- بخش اصلاح شده و حیاتی ---
-                    # ثبت خرید در دیتابیس قبل از ارسال پیام به کاربر
                     expire_date = (datetime.datetime.now() + datetime.timedelta(days=duration_days)) if duration_days and duration_days > 0 else None
                     plan_id = order_details.get('plan_details', {}).get('id') or order_details.get('gb_plan_details', {}).get('id')
                     
                     db_manager.add_purchase(
                         user_id=payment['user_id'], server_id=order_details['server_id'], plan_id=plan_id,
                         expire_date=expire_date.strftime("%Y-%m-%d %H:%M:%S") if expire_date else None,
-                        initial_volume_gb=total_gb, xui_client_uuid=client_details['uuid'],
-                        xui_client_email=client_details['email'], sub_id=client_details['subscription_id'],
+                        initial_volume_gb=total_gb, client_uuid=client_details['uuid'],
+                        client_email=client_details['email'], sub_id=client_details['subscription_id'],
                         single_configs=single_configs
                     )
-                    # --- پایان بخش اصلاح شده ---
                     
                     db_manager.confirm_online_payment(payment['id'], str(ref_id))
                     bot.send_message(user_telegram_id, "✅ پرداخت شما با موفقیت تایید و سرویس شما فعال گردید.")
