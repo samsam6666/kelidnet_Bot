@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # ==============================================================================
-# AlamorVPN Bot Professional Installer & Manager v5.1 (Final Release)
+# AlamorVPN Bot Professional Installer & Manager v5.2 (Final Stable)
 # ==============================================================================
 
 # --- Color Codes for better UI ---
@@ -49,7 +49,7 @@ install_bot() {
     fi
 
     print_info "Step 1: Updating system and installing prerequisites..."
-    apt-get update && apt-get install -y python3 python3-pip python3.10-venv git zip nginx socat curl
+    apt-get update && apt-get install -y python3 python3-pip python3.10-venv git zip nginx certbot python3-certbot-nginx
     if [ $? -ne 0 ]; then print_error "Failed to install system dependencies. Aborting."; exit 1; fi
 
     print_info "Step 2: Cloning the project repository from GitHub..."
@@ -78,7 +78,6 @@ install_bot() {
     print_success "Installation complete! Your bot is now running as a persistent service."
     print_info "To manage the bot, cd to $INSTALL_DIR and run 'sudo ./install.sh <command>'."
 }
-
 setup_env_file() {
     local PYTHON_EXEC="$INSTALL_DIR/.venv/bin/python3"
     print_info "--- Starting .env file configuration ---"
@@ -111,44 +110,37 @@ setup_ssl_and_nginx() {
     if [[ "$setup_ssl" != "y" ]]; then print_success "Skipping SSL configuration."; return; fi
 
     read -p "$(echo -e ${YELLOW}"Please enter your payment domain (e.g., pay.yourdomain.com): "${NC})" payment_domain
-    read -p "$(echo -e ${YELLOW}"Please enter your Cloudflare API Token (for DNS validation): "${NC})" cf_token
-    read -p "$(echo -e ${YELLOW}"Please enter a valid email for notifications: "${NC})" admin_email
+    read -p "$(echo -e ${YELLOW}"Please enter a valid email for Let's Encrypt notifications: "${NC})" admin_email
     
-    # نصب acme.sh
-    print_info "Installing/Updating acme.sh..."
-    curl https://get.acme.sh | sh -s email="$admin_email"
-    source ~/.bashrc
-    
-    # --- بخش اصلاح شده ---
-    # ثبت ایمیل و تنظیم Let's Encrypt به عنوان سرویس‌دهنده پیش‌فرض
-    print_info "Setting Let's Encrypt as the default certificate provider..."
-    ~/.acme.sh/acme.sh --register-account -m "$admin_email"
-    ~/.acme.sh/acme.sh --set-default-ca --server letsencrypt
-    # --- پایان بخش اصلاح شده ---
-    
-    # تنظیم توکن کلودفلر
-    export CF_Token="$cf_token"
-    
-    # دریافت گواهی با روش DNS
-    print_info "Requesting SSL certificate using acme.sh (DNS validation)..."
-    ~/.acme.sh/acme.sh --issue --dns dns_cf -d "$payment_domain"
-    if [ $? -ne 0 ]; then print_error "Failed to issue SSL certificate. Please check your Cloudflare API Token and domain."; exit 1; fi
-    
-    # نصب گواهی در مسیر استاندارد برای Nginx
-    SSL_CERT_PATH="/etc/ssl/certs/$payment_domain.cer"
-    SSL_KEY_PATH="/etc/ssl/private/$payment_domain.key"
-    print_info "Installing certificate to standard path..."
-    ~/.acme.sh/acme.sh --install-cert -d "$payment_domain" \
-        --key-file       "$SSL_KEY_PATH" \
-        --fullchain-file "$SSL_CERT_PATH" \
-        --reloadcmd     "sudo systemctl restart nginx"
-    if [ $? -ne 0 ]; then print_error "Failed to install certificate."; exit 1; fi
-    print_success "SSL certificate issued and installed successfully."
-
-    # ساخت کانفیگ نهایی Nginx
-    print_info "Configuring Nginx as a Reverse Proxy..."
     NGINX_CONFIG_PATH="/etc/nginx/sites-available/alamor_webhook"
+
+    # --- New, Robust Logic ---
+    # 1. Create a minimal Nginx config to pass the initial check.
+    print_info "Step 5.1: Creating temporary Nginx configuration..."
+    sudo cat > "$NGINX_CONFIG_PATH" <<- EOL
+server {
+    listen 80;
+    server_name $payment_domain;
+    root /var/www/html;
+    index index.html index.htm;
+}
+EOL
+
+    sudo ln -s -f "$NGINX_CONFIG_PATH" /etc/nginx/sites-enabled/
+    if [ -f "/etc/nginx/sites-enabled/default" ]; then sudo rm "/etc/nginx/sites-enabled/default"; fi
     
+    sudo systemctl restart nginx
+    if [ $? -ne 0 ]; then print_error "Nginx failed to start with temporary config. Aborting."; exit 1; fi
+    print_success "Nginx started successfully with temporary config."
+
+    # 2. Run Certbot using the --nginx plugin.
+    print_info "Step 5.2: Requesting SSL certificate with Certbot..."
+    sudo certbot --nginx -d "$payment_domain" --email "$admin_email" --agree-tos --no-eff-email --redirect --non-interactive
+    if [ $? -ne 0 ]; then print_error "Failed to issue SSL certificate. Please ensure the domain is correctly pointed to the server's IP."; exit 1; fi
+    print_success "SSL certificate issued and installed by Certbot."
+    
+    # 3. Overwrite the Nginx config with the final reverse proxy settings.
+    print_info "Step 5.3: Configuring Nginx as a Reverse Proxy..."
     sudo cat > "$NGINX_CONFIG_PATH" <<- EOL
 server {
     listen 80;
@@ -158,8 +150,10 @@ server {
 server {
     listen 443 ssl http2;
     server_name $payment_domain;
-    ssl_certificate $SSL_CERT_PATH;
-    ssl_certificate_key $SSL_KEY_PATH;
+    ssl_certificate /etc/letsencrypt/live/$payment_domain/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/$payment_domain/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
     location / {
         proxy_pass http://127.0.0.1:8080;
         proxy_set_header Host \$host;
@@ -167,12 +161,8 @@ server {
     }
 }
 EOL
-
-    sudo ln -s -f "$NGINX_CONFIG_PATH" /etc/nginx/sites-enabled/
-    if [ -f "/etc/nginx/sites-enabled/default" ]; then sudo rm "/etc/nginx/sites-enabled/default"; fi
-    
     sudo systemctl restart nginx
-    print_success "Nginx successfully configured and started."
+    print_success "Nginx successfully configured as a reverse proxy."
     
     echo -e "\n# Webhook Settings" >> .env
     echo "WEBHOOK_DOMAIN=\"$payment_domain\"" >> .env
