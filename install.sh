@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # ==============================================================================
-# AlamorVPN Bot Professional Installer & Manager v3.2 (Stable)
+# AlamorVPN Bot Professional Installer & Manager v3.3 (Stable)
 # ==============================================================================
 
 # --- Color Codes for better UI ---
@@ -15,8 +15,6 @@ NC='\033[0m'
 REPO_URL="https://github.com/AlamorNetwork/AlamorVPN_Bot.git"
 PROJECT_NAME="AlamorVPN_Bot"
 INSTALL_DIR="/var/www/alamorvpn_bot" # Standard web directory
-BOT_SERVICE_NAME="alamorbot.service"
-WEBHOOK_SERVICE_NAME="alamor_webhook.service"
 
 # --- Helper Functions ---
 print_success() { echo -e "\n${GREEN}✅ $1${NC}\n"; }
@@ -36,6 +34,9 @@ check_root() {
 install_bot() {
     check_root
     print_info "Starting the complete installation of AlamorVPN Bot..."
+
+    # Go to a safe directory before starting
+    cd /root || { print_error "Cannot change to /root directory. Aborting."; exit 1; }
 
     if [ -d "$INSTALL_DIR" ]; then
         print_warning "Project directory already exists at $INSTALL_DIR."
@@ -57,8 +58,8 @@ install_bot() {
     
     cd "$INSTALL_DIR" || { print_error "Failed to cd into project directory. Aborting."; exit 1; }
     
-    VENV_PATH="$INSTALL_DIR/.venv"
-    PYTHON_EXEC="$VENV_PATH/bin/python3"
+    local VENV_PATH="$INSTALL_DIR/.venv"
+    local PYTHON_EXEC="$VENV_PATH/bin/python3"
 
     print_info "Step 3: Creating virtual environment and installing Python libraries..."
     python3 -m venv .venv
@@ -79,6 +80,7 @@ install_bot() {
 }
 
 setup_env_file() {
+    local PYTHON_EXEC="$INSTALL_DIR/.venv/bin/python3"
     print_info "--- Starting .env file configuration ---"
     read -p "$(echo -e ${YELLOW}"Please enter your Telegram Bot Token: "${NC})" bot_token
     read -p "$(echo -e ${YELLOW}"Please enter your numeric Admin ID: "${NC})" admin_id
@@ -100,7 +102,6 @@ ENCRYPTION_KEY_ALAMOR="$encryption_key"
 EOL
     print_success ".env file created successfully."
 }
-
 setup_ssl_and_nginx() {
     print_info "\n--- Configuring SSL for Payment Domain ---"
     read -p "Do you want to configure an online payment domain? (y/n): " setup_ssl
@@ -184,16 +185,18 @@ update_bot() {
 
 remove_bot_internal() {
     print_info "Stopping and disabling services..."
-    sudo systemctl stop $BOT_SERVICE_NAME $WEBHOOK_SERVICE_NAME 2>/dev/null
-    sudo systemctl disable $BOT_SERVICE_NAME $WEBHOOK_SERVICE_NAME 2>/dev/null
+    sudo systemctl stop alamorbot.service alamor_webhook.service 2>/dev/null
+    sudo systemctl disable alamorbot.service alamor_webhook.service 2>/dev/null
     print_info "Removing service files..."
-    sudo rm -f "/etc/systemd/system/$BOT_SERVICE_NAME"
-    sudo rm -f "/etc/systemd/system/$WEBHOOK_SERVICE_NAME"
+    sudo rm -f "/etc/systemd/system/alamorbot.service"
+    sudo rm -f "/etc/systemd/system/alamor_webhook.service"
     sudo systemctl daemon-reload
     print_info "Removing Nginx config file..."
     sudo rm -f "/etc/nginx/sites-enabled/alamor_webhook"
     sudo rm -f "/etc/nginx/sites-available/alamor_webhook"
     sudo systemctl restart nginx 2>/dev/null
+    print_info "Removing project directory..."
+    rm -rf "$INSTALL_DIR"
 }
 
 remove_bot() {
