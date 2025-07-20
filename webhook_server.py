@@ -8,12 +8,12 @@ import os
 import sys
 import datetime
 
-# افزودن مسیر پروژه به sys.path تا بتوان ماژول‌ها را پیدا کرد
+# افزودن مسیر پروژه به sys.path
 project_path = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, project_path)
 
 # وارد کردن ماژول‌های پروژه
-from config import BOT_TOKEN, BOT_USERNAME_ALAMOR
+from config import BOT_TOKEN, BOT_USERNAME_ALAMOR # <-- اصلاح شد
 from database.db_manager import DatabaseManager
 from utils.bot_helpers import send_subscription_info
 from utils.config_generator import ConfigGenerator
@@ -29,13 +29,12 @@ db_manager = DatabaseManager()
 bot = telebot.TeleBot(BOT_TOKEN)
 config_gen = ConfigGenerator(XuiAPIClient, db_manager)
 
-# آدرس API تایید پرداخت زرین‌پال (نسخه واقعی)
+# آدرس API واقعی زرین‌پال
 ZARINPAL_VERIFY_URL = "https://api.zarinpal.com/pg/v4/payment/verify.json"
-BOT_USERNAME = BOT_USERNAME_ALAMOR or "YourBotUsername"
+BOT_USERNAME = BOT_USERNAME_ALAMOR # <-- اصلاح شد
 
 @app.route('/', methods=['GET'])
 def index():
-    """یک پیام ساده برای روت اصلی نمایش می‌دهد تا از خطای 404 جلوگیری شود."""
     return "AlamorVPN Bot Webhook Server is running."
 
 @app.route('/zarinpal/verify', methods=['GET'])
@@ -51,7 +50,7 @@ def handle_zarinpal_callback():
     payment = db_manager.get_payment_by_authority(authority)
     if not payment:
         logger.warning(f"Payment not found for Authority: {authority}")
-        return render_template('payment_status.html', status='error', message="تراکنش یافت نشد. ممکن است این لینک منقضی شده باشد.", bot_username=BOT_USERNAME)
+        return render_template('payment_status.html', status='error', message="تراکنش یافت نشد.", bot_username=BOT_USERNAME)
     
     user_db_info = db_manager.get_user_by_id(payment['user_id'])
     user_telegram_id = user_db_info['telegram_id']
