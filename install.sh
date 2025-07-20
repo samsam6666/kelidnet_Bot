@@ -106,87 +106,81 @@ EOL
 
 setup_ssl_and_nginx() {
     print_info "\n--- Configuring SSL for Payment Domain ---"
-    read -p "Do you want to configure an online payment domain (e.g., for Zarinpal)? (y/n): " setup_ssl
-    if [[ "$setup_ssl" != "y" ]]; then print_success "Skipping SSL configuration."; return; fi
+    read -p "Do you want to configure an online payment domain? (y/n): " setup_ssl
+    if [[ "$setup_ssl" != "y" ]]; then
+        print_success "Skipping SSL configuration."
+        return
+    fi
 
     read -p "$(echo -e ${YELLOW}"Please enter your payment domain (e.g., pay.yourdomain.com): "${NC})" payment_domain
+    while [[ -z "$payment_domain" ]]; do
+        print_error "Domain name cannot be empty."
+        read -p "$(echo -e ${YELLOW}"Please enter your payment domain: "${NC})" payment_domain
+    done
     read -p "$(echo -e ${YELLOW}"Please enter a valid email for Let's Encrypt notifications: "${NC})" admin_email
     
-    print_warning "IMPORTANT: To continue, ports 80 and 443 on your server must be open."
+    print_warning "IMPORTANT: To continue, port 80 on your server must be open and free."
     
+    # متوقف کردن موقت Nginx برای آزاد شدن پورت 80
+    print_info "Stopping Nginx temporarily to obtain SSL certificate..."
     sudo systemctl stop nginx
-    sudo certbot certonly --standalone -d "$payment_domain" --email "$admin_email" --agree-tos --no-eff-email --non-interactive
-    if [ $? -ne 0 ]; then print_error "Failed to issue SSL certificate. Please ensure the domain is correctly pointed to the server's IP."; exit 1; fi
-    print_success "SSL certificate issued successfully for $payment_domain."
     
+    # دریافت گواهی با روش Standalone که نیازی به کانفیگ قبلی Nginx ندارد
+    print_info "Requesting SSL certificate using Certbot (standalone)..."
+    sudo certbot certonly --standalone -d "$payment_domain" --email "$admin_email" --agree-tos --no-eff-email --non-interactive
+
+    if [ $? -ne 0 ]; then
+        print_error "Failed to issue SSL certificate. Please ensure the domain is correctly pointed to the server's IP."
+        sudo systemctl start nginx # در صورت خطا، Nginx را دوباره استارت می‌زنیم
+        exit 1
+    fi
+    print_success "SSL certificate issued successfully for $payment_domain."
+
+    # حالا که گواهی را داریم، فایل کانفیگ نهایی Nginx را می‌سازیم
+    print_info "Configuring Nginx as a Reverse Proxy..."
     NGINX_CONFIG_PATH="/etc/nginx/sites-available/alamor_webhook"
     
-    cat > $NGINX_CONFIG_PATH <<- EOL
+    sudo cat > "$NGINX_CONFIG_PATH" <<- EOL
 server {
     listen 80;
     server_name $payment_domain;
     return 301 https://\$host\$request_uri;
 }
+
 server {
     listen 443 ssl http2;
     server_name $payment_domain;
+
+    # مسیرهای گواهی که توسط Certbot ساخته شده
     ssl_certificate /etc/letsencrypt/live/$payment_domain/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/$payment_domain/privkey.pem;
     include /etc/letsencrypt/options-ssl-nginx.conf;
     ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+
     location / {
+        # ارسال درخواست به سرور وب‌هوک پایتون
         proxy_pass http://127.0.0.1:8080;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
     }
 }
 EOL
-    sudo ln -s -f $NGINX_CONFIG_PATH /etc/nginx/sites-enabled/
+
+    # فعال کردن کانفیگ جدید و حذف کانفیگ پیش‌فرض برای جلوگیری از تداخل
+    sudo ln -s -f "$NGINX_CONFIG_PATH" /etc/nginx/sites-enabled/
+    if [ -f "/etc/nginx/sites-enabled/default" ]; then
+        sudo rm "/etc/nginx/sites-enabled/default"
+    fi
+
     sudo systemctl start nginx
-    print_success "Nginx successfully configured for the webhook."
+    print_success "Nginx successfully configured and started."
     
+    # آپدیت فایل .env با اطلاعات دامنه
     echo -e "\n# Webhook Settings" >> .env
     echo "WEBHOOK_DOMAIN=\"$payment_domain\"" >> .env
     print_success "Payment domain saved to .env file."
-}
-
-setup_services() {
-    print_info "Creating systemd services..."
-    sudo cat > /etc/systemd/system/$BOT_SERVICE_NAME <<- EOL
-[Unit]
-Description=Alamor VPN Telegram Bot
-After=network.target
-[Service]
-User=root
-WorkingDirectory=$INSTALL_DIR
-ExecStart=$PYTHON_EXEC $INSTALL_DIR/main.py
-Restart=always
-RestartSec=10s
-[Install]
-WantedBy=multi-user.target
-EOL
-
-    if grep -q "WEBHOOK_DOMAIN" .env; then
-        sudo cat > /etc/systemd/system/$WEBHOOK_SERVICE_NAME <<- EOL
-[Unit]
-Description=AlamorBot Webhook Server for Payments
-After=network.target
-[Service]
-User=root
-WorkingDirectory=$INSTALL_DIR
-ExecStart=$PYTHON_EXEC $INSTALL_DIR/webhook_server.py
-Restart=always
-RestartSec=10s
-[Install]
-WantedBy=multi-user.target
-EOL
-        sudo systemctl enable $WEBHOOK_SERVICE_NAME
-        sudo systemctl start $WEBHOOK_SERVICE_NAME
-    fi
-    sudo systemctl daemon-reload
-    sudo systemctl enable $BOT_SERVICE_NAME
-    sudo systemctl start $BOT_SERVICE_NAME
-    print_success "Bot and Webhook services have been enabled and started."
 }
 
 update_bot() {
