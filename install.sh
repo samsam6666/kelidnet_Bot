@@ -103,6 +103,8 @@ EOL
     print_success ".env file created successfully."
 }
 
+# In install.sh
+
 setup_ssl_and_nginx() {
     print_info "\n--- Configuring SSL for Payment Domain ---"
     read -p "Do you want to configure an online payment domain? (y/n): " setup_ssl
@@ -111,27 +113,24 @@ setup_ssl_and_nginx() {
     read -p "$(echo -e ${YELLOW}"Please enter your payment domain (e.g., pay.yourdomain.com): "${NC})" payment_domain
     read -p "$(echo -e ${YELLOW}"Please enter a valid email for Let's Encrypt notifications: "${NC})" admin_email
     
-    # --- Smart SSL Check ---
-    SSL_CERT_PATH="/etc/letsencrypt/live/$payment_domain/fullchain.pem"
-    if [ -f "$SSL_CERT_PATH" ]; then
-        print_info "A valid SSL certificate already exists for $payment_domain. Skipping certificate request."
-    else
-        print_warning "IMPORTANT: To continue, port 80 must be open and pointed to this server's IP."
-        print_info "Stopping Nginx temporarily to obtain SSL certificate..."
-        sudo systemctl stop nginx
-        
-        print_info "Requesting SSL certificate using Certbot (standalone)..."
-        sudo certbot certonly --standalone -d "$payment_domain" --email "$admin_email" --agree-tos --no-eff-email --non-interactive
+    print_warning "IMPORTANT: To continue, port 80 must be open and pointed to this server's IP."
+    
+    # Stop Nginx to free up port 80 for Certbot
+    print_info "Stopping Nginx temporarily to obtain SSL certificate..."
+    sudo systemctl stop nginx
+    
+    # Get certificate using standalone mode, which doesn't need Nginx
+    print_info "Requesting SSL certificate using Certbot (standalone)..."
+    sudo certbot certonly --standalone -d "$payment_domain" --email "$admin_email" --agree-tos --no-eff-email --non-interactive
 
-        if [ $? -ne 0 ]; then
-            print_error "Failed to issue SSL certificate. Please ensure the domain is correctly pointed to the server's IP and port 80 is not blocked."
-            sudo systemctl start nginx
-            exit 1
-        fi
-        print_success "SSL certificate issued successfully for $payment_domain."
+    if [ $? -ne 0 ]; then
+        print_error "Failed to issue SSL certificate. Please ensure the domain is correctly pointed to the server's IP and port 80 is not blocked."
+        sudo systemctl start nginx # Try to start nginx again on failure
+        exit 1
     fi
-    # --- End of Smart SSL Check ---
+    print_success "SSL certificate issued successfully for $payment_domain."
 
+    # Now that the cert exists, create the FINAL Nginx configuration file
     print_info "Configuring Nginx as a Reverse Proxy..."
     NGINX_CONFIG_PATH="/etc/nginx/sites-available/alamor_webhook"
     
@@ -156,6 +155,7 @@ server {
 }
 EOL
 
+    # Enable the new config and remove default to prevent conflicts
     sudo ln -s -f "$NGINX_CONFIG_PATH" /etc/nginx/sites-enabled/
     if [ -f "/etc/nginx/sites-enabled/default" ]; then
         sudo rm "/etc/nginx/sites-enabled/default"
@@ -164,51 +164,11 @@ EOL
     sudo systemctl start nginx
     print_success "Nginx successfully configured and started."
     
+    # Update .env file with the domain
     echo -e "\n# Webhook Settings" >> .env
     echo "WEBHOOK_DOMAIN=\"$payment_domain\"" >> .env
     print_success "Payment domain saved to .env file."
 }
-setup_services() {
-    print_info "Creating systemd services..."
-    # Bot Service
-    sudo cat > /etc/systemd/system/$BOT_SERVICE_NAME <<- EOL
-[Unit]
-Description=Alamor VPN Telegram Bot
-After=network.target
-[Service]
-User=root
-WorkingDirectory=$INSTALL_DIR
-ExecStart=$INSTALL_DIR/.venv/bin/python3 $INSTALL_DIR/main.py
-Restart=always
-RestartSec=10s
-[Install]
-WantedBy=multi-user.target
-EOL
-
-    # Webhook Service
-    if grep -q "WEBHOOK_DOMAIN" .env; then
-        sudo cat > /etc/systemd/system/$WEBHOOK_SERVICE_NAME <<- EOL
-[Unit]
-Description=AlamorBot Webhook Server for Payments
-After=network.target
-[Service]
-User=root
-WorkingDirectory=$INSTALL_DIR
-ExecStart=$INSTALL_DIR/.venv/bin/python3 $INSTALL_DIR/webhook_server.py
-Restart=always
-RestartSec=10s
-[Install]
-WantedBy=multi-user.target
-EOL
-        sudo systemctl enable $WEBHOOK_SERVICE_NAME
-        sudo systemctl start $WEBHOOK_SERVICE_NAME
-    fi
-    sudo systemctl daemon-reload
-    sudo systemctl enable $BOT_SERVICE_NAME
-    sudo systemctl start $BOT_SERVICE_NAME
-    print_success "Bot and Webhook services have been enabled and started."
-}
-
 update_bot() {
     check_root
     print_info "Updating the bot from the 'main' branch on GitHub..."
