@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # ==============================================================================
-# AlamorVPN Bot Professional Installer & Manager v4.2 (Final)
+# AlamorVPN Bot Professional Installer & Manager v4.3 (Smart SSL Check)
 # ==============================================================================
 
 # --- Color Codes for better UI ---
@@ -36,8 +36,6 @@ check_root() {
 install_bot() {
     check_root
     print_info "Starting the complete installation of AlamorVPN Bot..."
-
-    # Go to a safe directory before starting
     cd /root || { print_error "Cannot change to /root directory. Aborting."; exit 1; }
 
     if [ -d "$INSTALL_DIR" ]; then
@@ -92,7 +90,6 @@ setup_env_file() {
     encryption_key=$($PYTHON_EXEC code-generate.py)
 
     print_warning "CRITICAL: Please save this encryption key in a safe place!"
-    print_warning "If you lose this key, you will NOT be able to access your encrypted data."
     echo -e "${GREEN}Your Encryption Key is: $encryption_key${NC}"
     read -p "Press [Enter] to continue after you have saved the key."
 
@@ -114,24 +111,27 @@ setup_ssl_and_nginx() {
     read -p "$(echo -e ${YELLOW}"Please enter your payment domain (e.g., pay.yourdomain.com): "${NC})" payment_domain
     read -p "$(echo -e ${YELLOW}"Please enter a valid email for Let's Encrypt notifications: "${NC})" admin_email
     
-    print_warning "IMPORTANT: To continue, port 80 must be open and pointed to this server's IP."
-    
-    # Stop Nginx to free up port 80 for Certbot
-    print_info "Stopping Nginx temporarily to obtain SSL certificate..."
-    sudo systemctl stop nginx
-    
-    # Get certificate using standalone mode
-    print_info "Requesting SSL certificate using Certbot (standalone)..."
-    sudo certbot certonly --standalone -d "$payment_domain" --email "$admin_email" --agree-tos --no-eff-email --non-interactive
+    # --- Smart SSL Check ---
+    SSL_CERT_PATH="/etc/letsencrypt/live/$payment_domain/fullchain.pem"
+    if [ -f "$SSL_CERT_PATH" ]; then
+        print_info "A valid SSL certificate already exists for $payment_domain. Skipping certificate request."
+    else
+        print_warning "IMPORTANT: To continue, port 80 must be open and pointed to this server's IP."
+        print_info "Stopping Nginx temporarily to obtain SSL certificate..."
+        sudo systemctl stop nginx
+        
+        print_info "Requesting SSL certificate using Certbot (standalone)..."
+        sudo certbot certonly --standalone -d "$payment_domain" --email "$admin_email" --agree-tos --no-eff-email --non-interactive
 
-    if [ $? -ne 0 ]; then
-        print_error "Failed to issue SSL certificate. Please ensure the domain is correctly pointed to the server's IP and port 80 is not blocked."
-        sudo systemctl start nginx
-        exit 1
+        if [ $? -ne 0 ]; then
+            print_error "Failed to issue SSL certificate. Please ensure the domain is correctly pointed to the server's IP and port 80 is not blocked."
+            sudo systemctl start nginx
+            exit 1
+        fi
+        print_success "SSL certificate issued successfully for $payment_domain."
     fi
-    print_success "SSL certificate issued successfully for $payment_domain."
+    # --- End of Smart SSL Check ---
 
-    # Now that the cert exists, create the final Nginx config
     print_info "Configuring Nginx as a Reverse Proxy..."
     NGINX_CONFIG_PATH="/etc/nginx/sites-available/alamor_webhook"
     
@@ -156,7 +156,6 @@ server {
 }
 EOL
 
-    # Enable the new config and remove default to prevent conflicts
     sudo ln -s -f "$NGINX_CONFIG_PATH" /etc/nginx/sites-enabled/
     if [ -f "/etc/nginx/sites-enabled/default" ]; then
         sudo rm "/etc/nginx/sites-enabled/default"
@@ -165,12 +164,10 @@ EOL
     sudo systemctl start nginx
     print_success "Nginx successfully configured and started."
     
-    # Update .env file with the domain
     echo -e "\n# Webhook Settings" >> .env
     echo "WEBHOOK_DOMAIN=\"$payment_domain\"" >> .env
     print_success "Payment domain saved to .env file."
 }
-
 setup_services() {
     print_info "Creating systemd services..."
     # Bot Service
