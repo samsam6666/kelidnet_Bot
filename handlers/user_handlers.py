@@ -247,7 +247,10 @@ def register_user_handlers(bot_instance, db_manager_instance, xui_api_instance):
 
         order_data = _user_states[user_id]['data']
         user_db_info = _db_manager.get_user_by_telegram_id(user_id)
-        
+        if not user_db_info:
+            logger.error(f"Could not find user with telegram_id {user_id} in the database.")
+            _bot.edit_message_text(messages.OPERATION_FAILED, user_id, message.message_id)
+            return
         # --- منطق تفکیک نوع درگاه ---
         if gateway['type'] == 'zarinpal':
             _bot.edit_message_text("⏳ در حال ساخت لینک پرداخت امن... لطفاً صبر کنید.", user_id, message.message_id)
