@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # ==============================================================================
-# AlamorVPN Bot Professional Installer & Manager v3.3 (Stable)
+# AlamorVPN Bot Professional Installer & Manager v4.0 (Using acme.sh)
 # ==============================================================================
 
 # --- Color Codes for better UI ---
@@ -14,7 +14,11 @@ NC='\033[0m'
 # --- Variables ---
 REPO_URL="https://github.com/AlamorNetwork/AlamorVPN_Bot.git"
 PROJECT_NAME="AlamorVPN_Bot"
-INSTALL_DIR="/var/www/alamorvpn_bot" # Standard web directory
+INSTALL_DIR="/var/www/alamorvpn_bot"
+BOT_SERVICE_NAME="alamorbot.service"
+WEBHOOK_SERVICE_NAME="alamor_webhook.service"
+VENV_PATH="$INSTALL_DIR/.venv"
+PYTHON_EXEC="$VENV_PATH/bin/python3"
 
 # --- Helper Functions ---
 print_success() { echo -e "\n${GREEN}✅ $1${NC}\n"; }
@@ -34,22 +38,16 @@ check_root() {
 install_bot() {
     check_root
     print_info "Starting the complete installation of AlamorVPN Bot..."
-
-    # Go to a safe directory before starting
     cd /root || { print_error "Cannot change to /root directory. Aborting."; exit 1; }
 
     if [ -d "$INSTALL_DIR" ]; then
         print_warning "Project directory already exists at $INSTALL_DIR."
         read -p "Do you want to remove it and reinstall? (This will delete all data) (y/n): " confirm_reinstall
-        if [[ "$confirm_reinstall" == "y" ]]; then
-            remove_bot_internal
-        else
-            print_info "Installation canceled."; exit 0
-        fi
+        if [[ "$confirm_reinstall" == "y" ]]; then remove_bot_internal; else print_info "Installation canceled."; exit 0; fi
     fi
 
     print_info "Step 1: Updating system and installing prerequisites..."
-    apt-get update && apt-get install -y python3 python3-pip python3.10-venv git zip nginx certbot
+    apt-get update && apt-get install -y python3 python3-pip python3.10-venv git zip nginx socat
     if [ $? -ne 0 ]; then print_error "Failed to install system dependencies. Aborting."; exit 1; fi
 
     print_info "Step 2: Cloning the project repository from GitHub..."
@@ -58,9 +56,6 @@ install_bot() {
     
     cd "$INSTALL_DIR" || { print_error "Failed to cd into project directory. Aborting."; exit 1; }
     
-    local VENV_PATH="$INSTALL_DIR/.venv"
-    local PYTHON_EXEC="$VENV_PATH/bin/python3"
-
     print_info "Step 3: Creating virtual environment and installing Python libraries..."
     python3 -m venv .venv
     $PYTHON_EXEC -m pip install --upgrade pip
@@ -108,26 +103,33 @@ setup_ssl_and_nginx() {
     if [[ "$setup_ssl" != "y" ]]; then print_success "Skipping SSL configuration."; return; fi
 
     read -p "$(echo -e ${YELLOW}"Please enter your payment domain (e.g., pay.yourdomain.com): "${NC})" payment_domain
-    read -p "$(echo -e ${YELLOW}"Please enter a valid email for Let's Encrypt notifications: "${NC})" admin_email
+    read -p "$(echo -e ${YELLOW}"Please enter a valid email for notifications: "${NC})" admin_email
     
     print_warning "IMPORTANT: To continue, port 80 must be open and pointed to this server's IP."
     
-    # Stop Nginx to free up port 80 for Certbot
-    print_info "Stopping Nginx temporarily to obtain SSL certificate..."
-    sudo systemctl stop nginx
+    # نصب acme.sh
+    print_info "Installing acme.sh..."
+    curl https://get.acme.sh | sh -s email="$admin_email"
+    source ~/.bashrc
     
-    # Get certificate using standalone mode
-    print_info "Requesting SSL certificate using Certbot (standalone)..."
-    sudo certbot certonly --standalone -d "$payment_domain" --email "$admin_email" --agree-tos --no-eff-email --non-interactive
+    # دریافت گواهی
+    print_info "Requesting SSL certificate using acme.sh..."
+    ~/.acme.sh/acme.sh --issue -d "$payment_domain" --standalone
+    if [ $? -ne 0 ]; then print_error "Failed to issue SSL certificate."; exit 1; fi
+    
+    # نصب گواهی در مسیر استاندارد برای Nginx
+    SSL_CERT_PATH="/etc/ssl/certs/$payment_domain.cer"
+    SSL_KEY_PATH="/etc/ssl/private/$payment_domain.key"
+    print_info "Installing certificate to $SSL_CERT_PATH..."
+    ~/.acme.sh/acme.sh --install-cert -d "$payment_domain" \
+        --key-file       "$SSL_KEY_PATH" \
+        --fullchain-file "$SSL_CERT_PATH" \
+        --reloadcmd     "sudo systemctl restart nginx"
 
-    if [ $? -ne 0 ]; then
-        print_error "Failed to issue SSL certificate. Please ensure the domain is correctly pointed to the server's IP and port 80 is not blocked."
-        sudo systemctl start nginx # Start nginx again on failure
-        exit 1
-    fi
-    print_success "SSL certificate issued successfully for $payment_domain."
+    if [ $? -ne 0 ]; then print_error "Failed to install certificate."; exit 1; fi
+    print_success "SSL certificate issued and installed successfully."
 
-    # Now that the cert exists, create the final Nginx config
+    # ساخت کانفیگ نهایی Nginx
     print_info "Configuring Nginx as a Reverse Proxy..."
     NGINX_CONFIG_PATH="/etc/nginx/sites-available/alamor_webhook"
     
@@ -137,36 +139,24 @@ server {
     server_name $payment_domain;
     return 301 https://\$host\$request_uri;
 }
-
 server {
     listen 443 ssl http2;
     server_name $payment_domain;
-
-    # SSL certificate paths created by Certbot
-    ssl_certificate /etc/letsencrypt/live/$payment_domain/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/$payment_domain/privkey.pem;
-    include /etc/letsencrypt/options-ssl-nginx.conf;
-    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
-
+    ssl_certificate $SSL_CERT_PATH;
+    ssl_certificate_key $SSL_KEY_PATH;
     location / {
-        # Forward requests to the Python webhook server
         proxy_pass http://127.0.0.1:8080;
         proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
     }
 }
 EOL
 
-    # Enable the new config and remove default to prevent conflicts
     sudo ln -s -f "$NGINX_CONFIG_PATH" /etc/nginx/sites-enabled/
-    if [ -f "/etc/nginx/sites-enabled/default" ]; then
-        sudo rm "/etc/nginx/sites-enabled/default"
-    fi
-
-    sudo systemctl start nginx
+    if [ -f "/etc/nginx/sites-enabled/default" ]; then sudo rm "/etc/nginx/sites-enabled/default"; fi
+    
+    sudo systemctl restart nginx
     print_success "Nginx successfully configured and started."
     
-    # Update .env file with the domain
     echo -e "\n# Webhook Settings" >> .env
     echo "WEBHOOK_DOMAIN=\"$payment_domain\"" >> .env
     print_success "Payment domain saved to .env file."
