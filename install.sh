@@ -105,16 +105,24 @@ EOL
 
 setup_ssl_and_nginx() {
     print_info "\n--- Configuring SSL for Payment Domain ---"
-    read -p "Do you want to configure an online payment domain using acme.sh? (y/n): " setup_ssl
+    read -p "Do you want to configure an online payment domain? (y/n): " setup_ssl
     if [[ "$setup_ssl" != "y" ]]; then print_success "Skipping SSL configuration."; return; fi
 
     read -p "$(echo -e ${YELLOW}"Please enter your payment domain (e.g., pay.yourdomain.com): "${NC})" payment_domain
     read -p "$(echo -e ${YELLOW}"Please enter your Cloudflare API Token (for DNS validation): "${NC})" cf_token
+    read -p "$(echo -e ${YELLOW}"Please enter a valid email for notifications: "${NC})" admin_email
     
     # نصب acme.sh
-    print_info "Installing acme.sh..."
-    curl https://get.acme.sh | sh
+    print_info "Installing/Updating acme.sh..."
+    curl https://get.acme.sh | sh -s email="$admin_email"
     source ~/.bashrc
+    
+    # --- بخش اصلاح شده ---
+    # ثبت ایمیل و تنظیم Let's Encrypt به عنوان سرویس‌دهنده پیش‌فرض
+    print_info "Setting Let's Encrypt as the default certificate provider..."
+    ~/.acme.sh/acme.sh --register-account -m "$admin_email"
+    ~/.acme.sh/acme.sh --set-default-ca --server letsencrypt
+    # --- پایان بخش اصلاح شده ---
     
     # تنظیم توکن کلودفلر
     export CF_Token="$cf_token"
