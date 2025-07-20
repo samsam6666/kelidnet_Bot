@@ -36,7 +36,7 @@ bash <(curl -Ls https://raw.githubusercontent.com/AlamorNetwork/AlamorVPN_Bot/ma
 پس از نصب، می‌توانید ربات را از طریق همان اسکریپت مدیریت کنید. ابتدا وارد پوشه پروژه شوید:
 
 ```bash
-cd /root/AlamorVPN_Bot
+cd /var/www/alamorvpn_bot
 ```
 
 سپس از دستورات زیر استفاده کنید:
