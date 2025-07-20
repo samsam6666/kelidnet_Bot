@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # ==============================================================================
-# AlamorVPN Bot Professional Installer & Manager v4.0 (Using acme.sh)
+# AlamorVPN Bot Professional Installer & Manager v4.1 (Robust)
 # ==============================================================================
 
 # --- Color Codes for better UI ---
@@ -103,33 +103,33 @@ setup_ssl_and_nginx() {
     if [[ "$setup_ssl" != "y" ]]; then print_success "Skipping SSL configuration."; return; fi
 
     read -p "$(echo -e ${YELLOW}"Please enter your payment domain (e.g., pay.yourdomain.com): "${NC})" payment_domain
-    read -p "$(echo -e ${YELLOW}"Please enter a valid email for notifications: "${NC})" admin_email
+    read -p "$(echo -e ${YELLOW}"Please enter a valid email for Let's Encrypt notifications: "${NC})" admin_email
     
-    print_warning "IMPORTANT: To continue, port 80 must be open and pointed to this server's IP."
-    
-    # نصب acme.sh
-    print_info "Installing acme.sh..."
-    curl https://get.acme.sh | sh -s email="$admin_email"
-    source ~/.bashrc
-    
-    # دریافت گواهی
-    print_info "Requesting SSL certificate using acme.sh..."
-    ~/.acme.sh/acme.sh --issue -d "$payment_domain" --standalone
-    if [ $? -ne 0 ]; then print_error "Failed to issue SSL certificate."; exit 1; fi
-    
-    # نصب گواهی در مسیر استاندارد برای Nginx
-    SSL_CERT_PATH="/etc/ssl/certs/$payment_domain.cer"
-    SSL_KEY_PATH="/etc/ssl/private/$payment_domain.key"
-    print_info "Installing certificate to $SSL_CERT_PATH..."
-    ~/.acme.sh/acme.sh --install-cert -d "$payment_domain" \
-        --key-file       "$SSL_KEY_PATH" \
-        --fullchain-file "$SSL_CERT_PATH" \
-        --reloadcmd     "sudo systemctl restart nginx"
+    # --- New Smart Port Check ---
+    print_info "Checking if port 80 is in use..."
+    if sudo lsof -i :80 -sTCP:LISTEN -t >/dev/null ; then
+        print_warning "Port 80 is currently in use by another service."
+        read -p "Do you want to temporarily stop it to obtain the SSL certificate? (y/n): " stop_service
+        if [[ "$stop_service" == "y" ]]; then
+            sudo systemctl stop nginx 2>/dev/null
+            sudo systemctl stop apache2 2>/dev/null
+            print_info "Web services stopped."
+        else
+            print_error "Cannot obtain certificate while port 80 is in use. Aborting SSL setup."
+            return
+        fi
+    fi
+    # --- End of New Smart Port Check ---
 
-    if [ $? -ne 0 ]; then print_error "Failed to install certificate."; exit 1; fi
-    print_success "SSL certificate issued and installed successfully."
+    print_info "Requesting SSL certificate using Certbot (standalone)..."
+    sudo certbot certonly --standalone -d "$payment_domain" --email "$admin_email" --agree-tos --no-eff-email --non-interactive
 
-    # ساخت کانفیگ نهایی Nginx
+    if [ $? -ne 0 ]; then
+        print_error "Failed to issue SSL certificate. Please ensure the domain is correctly pointed to the server's IP."
+        exit 1
+    fi
+    print_success "SSL certificate issued successfully for $payment_domain."
+
     print_info "Configuring Nginx as a Reverse Proxy..."
     NGINX_CONFIG_PATH="/etc/nginx/sites-available/alamor_webhook"
     
@@ -142,25 +142,29 @@ server {
 server {
     listen 443 ssl http2;
     server_name $payment_domain;
-    ssl_certificate $SSL_CERT_PATH;
-    ssl_certificate_key $SSL_KEY_PATH;
+    ssl_certificate /etc/letsencrypt/live/$payment_domain/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/$payment_domain/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
     location / {
         proxy_pass http://127.0.0.1:8080;
         proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
     }
 }
 EOL
 
     sudo ln -s -f "$NGINX_CONFIG_PATH" /etc/nginx/sites-enabled/
     if [ -f "/etc/nginx/sites-enabled/default" ]; then sudo rm "/etc/nginx/sites-enabled/default"; fi
-    
-    sudo systemctl restart nginx
+
+    sudo systemctl start nginx
     print_success "Nginx successfully configured and started."
     
     echo -e "\n# Webhook Settings" >> .env
     echo "WEBHOOK_DOMAIN=\"$payment_domain\"" >> .env
     print_success "Payment domain saved to .env file."
 }
+
 
 update_bot() {
     check_root
