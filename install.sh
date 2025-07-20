@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # ==============================================================================
-# AlamorVPN Bot Professional Installer & Manager v4.1 (Robust)
+# AlamorVPN Bot Professional Installer & Manager v4.2 (Final)
 # ==============================================================================
 
 # --- Color Codes for better UI ---
@@ -17,8 +17,6 @@ PROJECT_NAME="AlamorVPN_Bot"
 INSTALL_DIR="/var/www/alamorvpn_bot"
 BOT_SERVICE_NAME="alamorbot.service"
 WEBHOOK_SERVICE_NAME="alamor_webhook.service"
-VENV_PATH="$INSTALL_DIR/.venv"
-PYTHON_EXEC="$VENV_PATH/bin/python3"
 
 # --- Helper Functions ---
 print_success() { echo -e "\n${GREEN}✅ $1${NC}\n"; }
@@ -38,16 +36,22 @@ check_root() {
 install_bot() {
     check_root
     print_info "Starting the complete installation of AlamorVPN Bot..."
+
+    # Go to a safe directory before starting
     cd /root || { print_error "Cannot change to /root directory. Aborting."; exit 1; }
 
     if [ -d "$INSTALL_DIR" ]; then
         print_warning "Project directory already exists at $INSTALL_DIR."
         read -p "Do you want to remove it and reinstall? (This will delete all data) (y/n): " confirm_reinstall
-        if [[ "$confirm_reinstall" == "y" ]]; then remove_bot_internal; else print_info "Installation canceled."; exit 0; fi
+        if [[ "$confirm_reinstall" == "y" ]]; then
+            remove_bot_internal
+        else
+            print_info "Installation canceled."; exit 0
+        fi
     fi
 
     print_info "Step 1: Updating system and installing prerequisites..."
-    apt-get update && apt-get install -y python3 python3-pip python3.10-venv git zip nginx socat
+    apt-get update && apt-get install -y python3 python3-pip python3.10-venv git zip nginx certbot
     if [ $? -ne 0 ]; then print_error "Failed to install system dependencies. Aborting."; exit 1; fi
 
     print_info "Step 2: Cloning the project repository from GitHub..."
@@ -56,6 +60,9 @@ install_bot() {
     
     cd "$INSTALL_DIR" || { print_error "Failed to cd into project directory. Aborting."; exit 1; }
     
+    local VENV_PATH="$INSTALL_DIR/.venv"
+    local PYTHON_EXEC="$VENV_PATH/bin/python3"
+
     print_info "Step 3: Creating virtual environment and installing Python libraries..."
     python3 -m venv .venv
     $PYTHON_EXEC -m pip install --upgrade pip
@@ -85,6 +92,7 @@ setup_env_file() {
     encryption_key=$($PYTHON_EXEC code-generate.py)
 
     print_warning "CRITICAL: Please save this encryption key in a safe place!"
+    print_warning "If you lose this key, you will NOT be able to access your encrypted data."
     echo -e "${GREEN}Your Encryption Key is: $encryption_key${NC}"
     read -p "Press [Enter] to continue after you have saved the key."
 
@@ -97,6 +105,7 @@ ENCRYPTION_KEY_ALAMOR="$encryption_key"
 EOL
     print_success ".env file created successfully."
 }
+
 setup_ssl_and_nginx() {
     print_info "\n--- Configuring SSL for Payment Domain ---"
     read -p "Do you want to configure an online payment domain? (y/n): " setup_ssl
@@ -105,31 +114,24 @@ setup_ssl_and_nginx() {
     read -p "$(echo -e ${YELLOW}"Please enter your payment domain (e.g., pay.yourdomain.com): "${NC})" payment_domain
     read -p "$(echo -e ${YELLOW}"Please enter a valid email for Let's Encrypt notifications: "${NC})" admin_email
     
-    # --- New Smart Port Check ---
-    print_info "Checking if port 80 is in use..."
-    if sudo lsof -i :80 -sTCP:LISTEN -t >/dev/null ; then
-        print_warning "Port 80 is currently in use by another service."
-        read -p "Do you want to temporarily stop it to obtain the SSL certificate? (y/n): " stop_service
-        if [[ "$stop_service" == "y" ]]; then
-            sudo systemctl stop nginx 2>/dev/null
-            sudo systemctl stop apache2 2>/dev/null
-            print_info "Web services stopped."
-        else
-            print_error "Cannot obtain certificate while port 80 is in use. Aborting SSL setup."
-            return
-        fi
-    fi
-    # --- End of New Smart Port Check ---
-
+    print_warning "IMPORTANT: To continue, port 80 must be open and pointed to this server's IP."
+    
+    # Stop Nginx to free up port 80 for Certbot
+    print_info "Stopping Nginx temporarily to obtain SSL certificate..."
+    sudo systemctl stop nginx
+    
+    # Get certificate using standalone mode
     print_info "Requesting SSL certificate using Certbot (standalone)..."
     sudo certbot certonly --standalone -d "$payment_domain" --email "$admin_email" --agree-tos --no-eff-email --non-interactive
 
     if [ $? -ne 0 ]; then
-        print_error "Failed to issue SSL certificate. Please ensure the domain is correctly pointed to the server's IP."
+        print_error "Failed to issue SSL certificate. Please ensure the domain is correctly pointed to the server's IP and port 80 is not blocked."
+        sudo systemctl start nginx
         exit 1
     fi
     print_success "SSL certificate issued successfully for $payment_domain."
 
+    # Now that the cert exists, create the final Nginx config
     print_info "Configuring Nginx as a Reverse Proxy..."
     NGINX_CONFIG_PATH="/etc/nginx/sites-available/alamor_webhook"
     
@@ -154,17 +156,61 @@ server {
 }
 EOL
 
+    # Enable the new config and remove default to prevent conflicts
     sudo ln -s -f "$NGINX_CONFIG_PATH" /etc/nginx/sites-enabled/
-    if [ -f "/etc/nginx/sites-enabled/default" ]; then sudo rm "/etc/nginx/sites-enabled/default"; fi
+    if [ -f "/etc/nginx/sites-enabled/default" ]; then
+        sudo rm "/etc/nginx/sites-enabled/default"
+    fi
 
     sudo systemctl start nginx
     print_success "Nginx successfully configured and started."
     
+    # Update .env file with the domain
     echo -e "\n# Webhook Settings" >> .env
     echo "WEBHOOK_DOMAIN=\"$payment_domain\"" >> .env
     print_success "Payment domain saved to .env file."
 }
 
+setup_services() {
+    print_info "Creating systemd services..."
+    # Bot Service
+    sudo cat > /etc/systemd/system/$BOT_SERVICE_NAME <<- EOL
+[Unit]
+Description=Alamor VPN Telegram Bot
+After=network.target
+[Service]
+User=root
+WorkingDirectory=$INSTALL_DIR
+ExecStart=$INSTALL_DIR/.venv/bin/python3 $INSTALL_DIR/main.py
+Restart=always
+RestartSec=10s
+[Install]
+WantedBy=multi-user.target
+EOL
+
+    # Webhook Service
+    if grep -q "WEBHOOK_DOMAIN" .env; then
+        sudo cat > /etc/systemd/system/$WEBHOOK_SERVICE_NAME <<- EOL
+[Unit]
+Description=AlamorBot Webhook Server for Payments
+After=network.target
+[Service]
+User=root
+WorkingDirectory=$INSTALL_DIR
+ExecStart=$INSTALL_DIR/.venv/bin/python3 $INSTALL_DIR/webhook_server.py
+Restart=always
+RestartSec=10s
+[Install]
+WantedBy=multi-user.target
+EOL
+        sudo systemctl enable $WEBHOOK_SERVICE_NAME
+        sudo systemctl start $WEBHOOK_SERVICE_NAME
+    fi
+    sudo systemctl daemon-reload
+    sudo systemctl enable $BOT_SERVICE_NAME
+    sudo systemctl start $BOT_SERVICE_NAME
+    print_success "Bot and Webhook services have been enabled and started."
+}
 
 update_bot() {
     check_root
@@ -172,25 +218,23 @@ update_bot() {
     sudo systemctl stop $BOT_SERVICE_NAME $WEBHOOK_SERVICE_NAME 2>/dev/null
     git pull origin main
     if [ $? -ne 0 ]; then print_error "Failed to pull updates from GitHub. Aborting."; exit 1; fi
-    $PYTHON_EXEC -m pip install -r requirements.txt
+    $INSTALL_DIR/.venv/bin/python3 -m pip install -r requirements.txt
     sudo systemctl start $BOT_SERVICE_NAME $WEBHOOK_SERVICE_NAME 2>/dev/null
     print_success "Bot updated and restarted successfully."
 }
 
 remove_bot_internal() {
     print_info "Stopping and disabling services..."
-    sudo systemctl stop alamorbot.service alamor_webhook.service 2>/dev/null
-    sudo systemctl disable alamorbot.service alamor_webhook.service 2>/dev/null
+    sudo systemctl stop $BOT_SERVICE_NAME $WEBHOOK_SERVICE_NAME 2>/dev/null
+    sudo systemctl disable $BOT_SERVICE_NAME $WEBHOOK_SERVICE_NAME 2>/dev/null
     print_info "Removing service files..."
-    sudo rm -f "/etc/systemd/system/alamorbot.service"
-    sudo rm -f "/etc/systemd/system/alamor_webhook.service"
+    sudo rm -f "/etc/systemd/system/$BOT_SERVICE_NAME"
+    sudo rm -f "/etc/systemd/system/$WEBHOOK_SERVICE_NAME"
     sudo systemctl daemon-reload
     print_info "Removing Nginx config file..."
     sudo rm -f "/etc/nginx/sites-enabled/alamor_webhook"
     sudo rm -f "/etc/nginx/sites-available/alamor_webhook"
     sudo systemctl restart nginx 2>/dev/null
-    print_info "Removing project directory..."
-    rm -rf "$INSTALL_DIR"
 }
 
 remove_bot() {
@@ -234,23 +278,30 @@ show_help() {
 }
 
 # --- Main Script Logic ---
-if [[ "$1" != "install" && ! -d "$INSTALL_DIR" && "$0" == "./install.sh" ]]; then
-    print_error "Project directory not found. Please run with 'install' command first."
-    show_help; exit 1
+if [[ "$1" == "install" ]]; then
+    install_bot
+    exit 0
 fi
-if [[ -d "$INSTALL_DIR" && "$0" == "./install.sh" ]]; then
-    cd "$INSTALL_DIR"
+
+# For management commands, ensure we are in the project directory
+if [ ! -f "main.py" ]; then
+    if [ -d "$INSTALL_DIR" ]; then
+        cd "$INSTALL_DIR"
+    else
+        print_error "Project directory not found. Please run with 'install' command first or run this script from the project root."
+        show_help
+        exit 1
+    fi
 fi
 
 case "$1" in
-    install) install_bot ;;
     update) update_bot ;;
     remove) remove_bot ;;
     backup) create_backup ;;
     start) check_root; sudo systemctl start $BOT_SERVICE_NAME $WEBHOOK_SERVICE_NAME 2>/dev/null; print_success "Services started." ;;
     stop) check_root; sudo systemctl stop $BOT_SERVICE_NAME $WEBHOOK_SERVICE_NAME 2>/dev/null; print_success "Services stopped." ;;
     restart) check_root; sudo systemctl restart $BOT_SERVICE_NAME $WEBHOOK_SERVICE_NAME 2>/dev/null; print_success "Services restarted." ;;
-    status) check_root; print_info "Main Bot Service Status:"; sudo systemctl status $BOT_SERVICE_NAME; print_info "\nWebhook Service Status:"; sudo systemctl status $WEBHOOK_SERVICE_NAME ;;
+    status) check_root; print_info "Main Bot Service Status:"; sudo systemctl --no-pager status $BOT_SERVICE_NAME; print_info "\nWebhook Service Status:"; sudo systemctl --no-pager status $WEBHOOK_SERVICE_NAME ;;
     logs) sudo journalctl -u $BOT_SERVICE_NAME -f ;;
     *) show_help ;;
 esac
